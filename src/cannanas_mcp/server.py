@@ -33,6 +33,32 @@ def _missing_api_key_error() -> dict[str, Any]:
     }
 
 
+async def _call_shortcut_operation(
+    operation_id: str,
+    *,
+    path_params: dict[str, Any] | None = None,
+    query_params: dict[str, Any] | None = None,
+    body: dict[str, Any] | list[Any] | None = None,
+) -> dict[str, Any]:
+    settings = get_settings()
+    if not settings.api_key:
+        return _missing_api_key_error()
+
+    operation = get_index().get(operation_id)
+    rendered_path = get_index().render_path(operation, path_params)
+    client = CannanasClient(
+        base_url=settings.api_base_url,
+        api_key=settings.api_key,
+        timeout_seconds=settings.timeout_seconds,
+    )
+    return await client.call_operation(
+        operation=operation,
+        rendered_path=rendered_path,
+        query_params=query_params,
+        body=body,
+    )
+
+
 def _dashboard_summary() -> dict[str, Any]:
     settings = get_settings()
     index = get_index()
@@ -56,6 +82,7 @@ def _dashboard_summary() -> dict[str, Any]:
         "quick_start": [
             "Search operations by intent, tag, or method.",
             "Inspect an operation before calling it.",
+            "List your clubs and open a compact club snapshot.",
             "Run the auth test to confirm your API key works.",
             "Use the reporting tools for weekly metrics by club.",
         ],
@@ -75,6 +102,8 @@ def server_info() -> dict[str, Any]:
         "dashboard_uri": DASHBOARD_URI,
         "tools": [
             "cannanas_dashboard",
+            "list_clubs",
+            "get_club_snapshot",
             "search_operations",
             "describe_operation",
             "auth_test",
@@ -102,6 +131,105 @@ def cannanas_dashboard() -> dict[str, Any]:
 )
 def dashboard_view() -> str:
     return dashboard_html()
+
+
+@mcp.tool
+async def list_clubs(limit: int = 20) -> dict[str, Any]:
+    """Return a concise list of the authenticated user's Cannanas clubs."""
+    settings = get_settings()
+    if not settings.api_key:
+        return _missing_api_key_error()
+
+    response = await _call_shortcut_operation("getClubs")
+    if not response.get("ok"):
+        return response
+
+    client = CannanasClient(
+        base_url=settings.api_base_url,
+        api_key=settings.api_key,
+        timeout_seconds=settings.timeout_seconds,
+    )
+    clubs = client.extract_list_items(response.get("data"))
+    clubs = clubs[: max(1, min(limit, 50))]
+
+    return {
+        "ok": True,
+        "count": len(clubs),
+        "clubs": [
+            {
+                "id": club.get("id") or club.get("clubId"),
+                "name": club.get("name") or club.get("title") or "Unnamed club",
+                "member_count": club.get("member_count") or club.get("members_count"),
+                "raw": club,
+            }
+            for club in clubs
+        ],
+        "source_operation": "getClubs",
+    }
+
+
+@mcp.tool
+async def get_club_snapshot(
+    club_id: str,
+    archived_locations: bool = False,
+) -> dict[str, Any]:
+    """Return a compact support snapshot for one club."""
+    settings = get_settings()
+    if not settings.api_key:
+        return _missing_api_key_error()
+
+    club_result = await _call_shortcut_operation("getClub", path_params={"clubId": club_id})
+    if not club_result.get("ok"):
+        return club_result
+
+    locations_result = await _call_shortcut_operation(
+        "getClubLocations",
+        path_params={"clubId": club_id},
+        query_params={"archived": archived_locations},
+    )
+    if not locations_result.get("ok"):
+        return locations_result
+
+    registration_result = await _call_shortcut_operation(
+        "getClubRegistrationConfig",
+        path_params={"clubId": club_id},
+    )
+    if not registration_result.get("ok"):
+        return registration_result
+
+    payment_methods_result = await _call_shortcut_operation(
+        "getClubPaymentMethods",
+        path_params={"clubId": club_id},
+    )
+    if not payment_methods_result.get("ok"):
+        return payment_methods_result
+
+    client = CannanasClient(
+        base_url=settings.api_base_url,
+        api_key=settings.api_key,
+        timeout_seconds=settings.timeout_seconds,
+    )
+    locations = client.extract_list_items(locations_result.get("data"))
+    payment_methods = client.extract_list_items(payment_methods_result.get("data"))
+
+    return {
+        "ok": True,
+        "club": club_result.get("data"),
+        "summary": {
+            "location_count": len(locations),
+            "payment_method_count": len(payment_methods),
+            "registration_config_present": registration_result.get("data") is not None,
+        },
+        "locations": locations,
+        "registration_config": registration_result.get("data"),
+        "payment_methods": payment_methods_result.get("data"),
+        "source_operations": [
+            "getClub",
+            "getClubLocations",
+            "getClubRegistrationConfig",
+            "getClubPaymentMethods",
+        ],
+    }
 
 
 @mcp.tool

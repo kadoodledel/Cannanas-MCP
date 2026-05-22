@@ -18,6 +18,8 @@ This project is set up to work locally and to deploy on Alpic.
 - `auth_test`
 - `call_operation`
 - `cannanas_dashboard`
+- `list_clubs`
+- `get_club_snapshot`
 
 The dashboard tool opens the `ui://cannanas/dashboard.html` app resource, which gives ChatGPT-style MCP hosts a richer UI for discovery and reporting.
 
@@ -68,6 +70,8 @@ Ask an MCP client:
 
 - "Search Cannanas operations for finance reports"
 - "Open the Cannanas dashboard"
+- "List my clubs"
+- "Show a snapshot for club `<club-id>`"
 - "Describe the `getClubBatches` operation"
 - "Run the Cannanas auth test"
 - "Call `getClubCarts` for club `<club-id>` with query params `{ \"page\": 1 }`"

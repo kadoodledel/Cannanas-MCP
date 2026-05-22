@@ -551,6 +551,11 @@ def dashboard_html() -> str:
               <button class="btn-secondary" id="load-featured" type="button">Load featured operations</button>
             </div>
 
+            <div class="toolbar">
+              <button class="btn-secondary" id="list-clubs" type="button">List clubs</button>
+              <button class="btn-secondary" id="club-snapshot" type="button">Club snapshot</button>
+            </div>
+
             <div class="panel" style="padding: 14px; background: rgba(148, 163, 184, 0.05);">
               <div class="kicker">Weekly metrics</div>
               <div class="field-grid" style="grid-template-columns: 1fr 1fr;">
@@ -598,6 +603,8 @@ def dashboard_html() -> str:
       runSearch: document.getElementById("run-search"),
       authTest: document.getElementById("auth-test"),
       loadFeatured: document.getElementById("load-featured"),
+      listClubs: document.getElementById("list-clubs"),
+      clubSnapshot: document.getElementById("club-snapshot"),
       runMetrics: document.getElementById("run-metrics"),
     };
 
@@ -791,6 +798,37 @@ def dashboard_html() -> str:
       if (state.dashboard?.featured_operations) {
         renderOperationList(state.dashboard.featured_operations, "Featured operations");
       }
+    });
+
+    els.listClubs.addEventListener("click", async () => {
+      const payload = await callTool("list_clubs", { limit: 20 });
+      const clubs = Array.isArray(payload?.clubs) ? payload.clubs : [];
+      els.results.innerHTML = `
+        <article class="result">
+          <div class="result-id">Club list</div>
+          <div class="result-summary">Found ${clubs.length} clubs.</div>
+          <div class="detail"><pre>${escapeHtml(pretty(payload))}</pre></div>
+        </article>
+      `;
+      els.serverContext.textContent = pretty(payload);
+    });
+
+    els.clubSnapshot.addEventListener("click", async () => {
+      if (!els.clubId.value) {
+        setStatus("Add a club ID first, then run a club snapshot.", "warn");
+        return;
+      }
+      const payload = await callTool("get_club_snapshot", {
+        club_id: els.clubId.value,
+        archived_locations: false,
+      });
+      els.results.innerHTML = `
+        <article class="result">
+          <div class="result-id">Club snapshot</div>
+          <div class="detail"><pre>${escapeHtml(pretty(payload))}</pre></div>
+        </article>
+      `;
+      els.serverContext.textContent = pretty(payload);
     });
 
     els.runSearch.addEventListener("click", async () => {

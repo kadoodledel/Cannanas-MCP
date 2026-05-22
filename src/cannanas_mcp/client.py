@@ -9,6 +9,8 @@ from cannanas_mcp.openapi_index import OperationSpec
 
 
 class CannanasClient:
+    LIST_CONTAINER_KEYS = ("data", "items", "results", "records", "rows", "clubs", "locations", "members")
+
     def __init__(self, *, base_url: str, api_key: str, timeout_seconds: float) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -50,6 +52,20 @@ class CannanasClient:
         if not response.is_success:
             result["error"] = "Cannanas API request failed."
         return result
+
+    def extract_list_items(self, data: Any) -> list[dict[str, Any]]:
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        if not isinstance(data, dict):
+            return []
+        for key in self.LIST_CONTAINER_KEYS:
+            value = data.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+        list_values = [value for value in data.values() if isinstance(value, list)]
+        if len(list_values) == 1:
+            return [item for item in list_values[0] if isinstance(item, dict)]
+        return []
 
     def _flatten_query_params(self, query_params: dict[str, Any]) -> dict[str, Any]:
         flattened: dict[str, Any] = {}
