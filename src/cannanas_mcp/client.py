@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 from typing import Any
 from urllib.parse import urlencode
 
@@ -32,8 +34,11 @@ class CannanasClient:
             "Accept": "application/json",
         }
         request_kwargs: dict[str, Any] = {"headers": headers}
-        if body is not None:
-            request_kwargs["json"] = body
+        body_request_kwargs = self._build_body_request_kwargs(operation, body)
+        extra_headers = body_request_kwargs.pop("headers", None)
+        if extra_headers:
+            request_kwargs["headers"].update(extra_headers)
+        request_kwargs.update(body_request_kwargs)
 
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             response = await client.request(operation.method, url, **request_kwargs)
@@ -52,6 +57,67 @@ class CannanasClient:
         if not response.is_success:
             result["error"] = "Cannanas API request failed."
         return result
+
+    def _build_body_request_kwargs(self, operation: OperationSpec, body: Any) -> dict[str, Any]:
+        if body is None:
+            return {}
+
+        content_types = {
+            str(content_type).lower()
+            for content_type in (operation.request_body or {}).get("content_types", [])
+        }
+        if "application/json" in content_types or not content_types:
+            return {"json": body}
+        if "application/x-www-form-urlencoded" in content_types:
+            if isinstance(body, dict):
+                return {"data": self._flatten_query_params(body)}
+            return {"data": {"body": body}}
+        if "multipart/form-data" in content_types:
+            return self._build_multipart_request_kwargs(body)
+        if "text/plain" in content_types:
+            if isinstance(body, str):
+                return {"content": body.encode("utf-8"), "headers": {"Content-Type": "text/plain; charset=utf-8"}}
+            return {
+                "content": json.dumps(body, ensure_ascii=False).encode("utf-8"),
+                "headers": {"Content-Type": "text/plain; charset=utf-8"},
+            }
+        return {"json": body}
+
+    def _build_multipart_request_kwargs(self, body: Any) -> dict[str, Any]:
+        if not isinstance(body, dict):
+            return {"files": [("body", (None, json.dumps(body, ensure_ascii=False)))]}
+
+        files: list[tuple[str, Any]] = []
+        for key, value in body.items():
+            file_tuple = self._coerce_file_tuple(value)
+            if file_tuple is not None:
+                files.append((key, file_tuple))
+                continue
+            if isinstance(value, (dict, list)):
+                files.append((key, (None, json.dumps(value, ensure_ascii=False))))
+            else:
+                files.append((key, (None, str(value))))
+        return {"files": files}
+
+    def _coerce_file_tuple(self, value: Any) -> tuple[Any, ...] | None:
+        if not isinstance(value, dict):
+            return None
+
+        filename = value.get("filename") or value.get("name") or "upload.bin"
+        content_type = value.get("content_type") or value.get("mime_type") or "application/octet-stream"
+        if "content_base64" in value:
+            raw = base64.b64decode(value["content_base64"])
+            return (filename, raw, content_type)
+        if "content" in value:
+            content = value["content"]
+            if isinstance(content, bytes):
+                raw = content
+            elif isinstance(content, str):
+                raw = content.encode("utf-8")
+            else:
+                raw = json.dumps(content, ensure_ascii=False).encode("utf-8")
+            return (filename, raw, content_type)
+        return None
 
     def extract_list_items(self, data: Any) -> list[dict[str, Any]]:
         if isinstance(data, list):

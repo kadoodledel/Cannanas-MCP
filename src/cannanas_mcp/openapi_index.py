@@ -125,10 +125,16 @@ class OperationIndex:
     def _compute_support(self, request_body: dict[str, Any] | None) -> tuple[bool, str | None]:
         if not request_body:
             return True, None
-        content_types = request_body.get("content_types", [])
-        if "application/json" in content_types:
+        content_types = {str(content_type).lower() for content_type in request_body.get("content_types", [])}
+        supported_content_types = {
+            "application/json",
+            "application/x-www-form-urlencoded",
+            "multipart/form-data",
+            "text/plain",
+        }
+        if content_types & supported_content_types:
             return True, None
-        return False, "Only endpoints with no body or an application/json body are supported in this version."
+        return False, "This endpoint uses a request body content type that is not yet mapped by the MCP server."
 
     def _summarize_schema(
         self,

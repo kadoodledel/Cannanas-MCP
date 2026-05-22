@@ -21,6 +21,8 @@ This project is set up to work locally and to deploy on Alpic.
 - `list_clubs`
 - `get_club_snapshot`
 
+In addition to the named shortcuts above, the server now registers every documented Cannanas OpenAPI operation as its own MCP tool, so clients can call the full API surface directly when needed.
+
 The dashboard tool opens the `ui://cannanas/dashboard.html` app resource, which gives ChatGPT-style MCP hosts a richer UI for discovery and reporting.
 
 The server intentionally does not auto-expose every OpenAPI route as its own MCP tool. The Cannanas spec is large, and a curated interface gives LLM clients much better tool selection behavior.

@@ -59,6 +59,43 @@ async def _call_shortcut_operation(
     )
 
 
+async def _call_operation_by_id(
+    operation_id: str,
+    *,
+    path_params: dict[str, Any] | None = None,
+    query_params: dict[str, Any] | None = None,
+    body: dict[str, Any] | list[Any] | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    settings = get_settings()
+    if not settings.api_key:
+        return _missing_api_key_error()
+
+    operation = get_index().get(operation_id)
+    rendered_path = get_index().render_path(operation, path_params)
+    if dry_run:
+        return {
+            "ok": True,
+            "dry_run": True,
+            "operation": operation.to_summary(),
+            "rendered_path": rendered_path,
+            "query_params": query_params,
+            "body": body,
+        }
+
+    client = CannanasClient(
+        base_url=settings.api_base_url,
+        api_key=settings.api_key,
+        timeout_seconds=settings.timeout_seconds,
+    )
+    return await client.call_operation(
+        operation=operation,
+        rendered_path=rendered_path,
+        query_params=query_params,
+        body=body,
+    )
+
+
 def _dashboard_summary() -> dict[str, Any]:
     settings = get_settings()
     index = get_index()
@@ -100,6 +137,7 @@ def server_info() -> dict[str, Any]:
         "operations_indexed": len(index.operations),
         "tags": index.tags(),
         "dashboard_uri": DASHBOARD_URI,
+        "openapi_operation_tools": len(index.operations),
         "tools": [
             "cannanas_dashboard",
             "list_clubs",
@@ -232,6 +270,49 @@ async def get_club_snapshot(
     }
 
 
+def _operation_tool_name(operation_id: str) -> str:
+    sanitized = "".join(character if character.isalnum() or character == "_" else "_" for character in operation_id)
+    if sanitized and sanitized[0].isdigit():
+        sanitized = f"op_{sanitized}"
+    return sanitized or "cannanas_operation"
+
+
+def _register_openapi_operation_tools() -> None:
+    manual_tools = {
+        "cannanas_dashboard",
+        "list_clubs",
+        "get_club_snapshot",
+        "search_operations",
+        "describe_operation",
+        "auth_test",
+        "call_operation",
+    }
+    for operation in get_index().operations.values():
+        tool_name = _operation_tool_name(operation.operation_id)
+        if tool_name in manual_tools:
+            continue
+
+        async def operation_tool(
+            path_params: dict[str, Any] | None = None,
+            query_params: dict[str, Any] | None = None,
+            body: dict[str, Any] | list[Any] | None = None,
+            dry_run: bool = False,
+            _operation_id: str = operation.operation_id,
+        ) -> dict[str, Any]:
+            """Auto-generated Cannanas operation tool."""
+            return await _call_operation_by_id(
+                _operation_id,
+                path_params=path_params,
+                query_params=query_params,
+                body=body,
+                dry_run=dry_run,
+            )
+
+        operation_tool.__name__ = tool_name
+        operation_tool.__doc__ = f"{operation.method} {operation.path} - {operation.summary}"
+        mcp.tool(operation_tool)
+
+
 @mcp.tool
 def search_operations(
     query: str = "",
@@ -290,42 +371,18 @@ async def call_operation(
     body: dict[str, Any] | list[Any] | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Call a supported Cannanas API operation by operation_id."""
-    settings = get_settings()
-    if not settings.api_key:
-        return _missing_api_key_error()
-
-    operation = get_index().get(operation_id)
-    if not operation.supported:
-        return {
-            "ok": False,
-            "error": operation.unsupported_reason,
-            "operation": operation.to_summary(),
-        }
-
-    rendered_path = get_index().render_path(operation, path_params)
-    if dry_run:
-        return {
-            "ok": True,
-            "dry_run": True,
-            "operation": operation.to_summary(),
-            "rendered_path": rendered_path,
-            "query_params": query_params,
-            "body": body,
-        }
-
-    client = CannanasClient(
-        base_url=settings.api_base_url,
-        api_key=settings.api_key,
-        timeout_seconds=settings.timeout_seconds,
-    )
-    return await client.call_operation(
-        operation=operation,
-        rendered_path=rendered_path,
+    """Call any Cannanas API operation by operation_id."""
+    return await _call_operation_by_id(
+        operation_id,
+        path_params=path_params,
         query_params=query_params,
         body=body,
+        dry_run=dry_run,
     )
 
 
 def main() -> None:
     mcp.run(transport=get_settings().transport)
+
+
+_register_openapi_operation_tools()
