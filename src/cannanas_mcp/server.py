@@ -4,7 +4,9 @@ from functools import lru_cache
 from typing import Any
 
 from fastmcp import FastMCP
+from fastmcp.apps import AppConfig, ResourceCSP
 
+from cannanas_mcp.dashboard import DASHBOARD_URI, dashboard_html
 from cannanas_mcp.client import CannanasClient
 from cannanas_mcp.config import Settings, load_settings
 from cannanas_mcp.openapi_index import OperationIndex
@@ -31,6 +33,35 @@ def _missing_api_key_error() -> dict[str, Any]:
     }
 
 
+def _dashboard_summary() -> dict[str, Any]:
+    settings = get_settings()
+    index = get_index()
+    featured_operations = index.search(limit=8, include_unsupported=False)
+    return {
+        "ok": True,
+        "server": {
+            "name": "Cannanas MCP Server",
+            "base_url": settings.api_base_url,
+            "openapi_path": str(settings.openapi_path),
+            "transport": settings.transport,
+            "api_key_configured": bool(settings.api_key),
+            "operations_indexed": len(index.operations),
+            "dashboard_uri": DASHBOARD_URI,
+        },
+        "highlights": {
+            "tags": index.tags(),
+            "featured_operation_count": len(featured_operations),
+        },
+        "featured_operations": featured_operations,
+        "quick_start": [
+            "Search operations by intent, tag, or method.",
+            "Inspect an operation before calling it.",
+            "Run the auth test to confirm your API key works.",
+            "Use the reporting tools for weekly metrics by club.",
+        ],
+    }
+
+
 @mcp.resource("cannanas://info")
 def server_info() -> dict[str, Any]:
     settings = get_settings()
@@ -41,13 +72,36 @@ def server_info() -> dict[str, Any]:
         "openapi_path": str(settings.openapi_path),
         "operations_indexed": len(index.operations),
         "tags": index.tags(),
+        "dashboard_uri": DASHBOARD_URI,
         "tools": [
+            "cannanas_dashboard",
             "search_operations",
             "describe_operation",
             "auth_test",
             "call_operation",
         ],
     }
+
+
+@mcp.tool(
+    app=AppConfig(
+        resource_uri=DASHBOARD_URI,
+        csp=ResourceCSP(resource_domains=["https://unpkg.com"]),
+    )
+)
+def cannanas_dashboard() -> dict[str, Any]:
+    """Open the Cannanas control room app."""
+    return _dashboard_summary()
+
+
+@mcp.resource(
+    DASHBOARD_URI,
+    app=AppConfig(
+        csp=ResourceCSP(resource_domains=["https://unpkg.com"]),
+    ),
+)
+def dashboard_view() -> str:
+    return dashboard_html()
 
 
 @mcp.tool

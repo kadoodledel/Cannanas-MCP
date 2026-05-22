@@ -19,10 +19,13 @@ def get_default_openapi_path() -> Path:
 
 
 def load_settings() -> Settings:
+    transport = os.getenv("MCP_TRANSPORT")
+    if not transport:
+        transport = "streamable-http" if os.getenv("ALPIC_HOST") else "stdio"
     return Settings(
         api_base_url=os.getenv("CANNANAS_BASE_URL", "https://api.cannanas.club").rstrip("/"),
         api_key=os.getenv("CANNANAS_API_KEY"),
         openapi_path=Path(os.getenv("CANNANAS_OPENAPI_PATH", str(get_default_openapi_path()))),
         timeout_seconds=float(os.getenv("CANNANAS_TIMEOUT_SECONDS", "45")),
-        transport=os.getenv("MCP_TRANSPORT", "stdio"),
+        transport=transport,
     )
